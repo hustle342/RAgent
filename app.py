@@ -18,6 +18,7 @@ from src.embedding.vector_db import VectorDatabase
 from src.rag.rag_system import RAGSystem
 from src.rag.web_search import FreeWebSearcher
 from src.rag.quiz_generator import QuizGenerator
+from src.rag.summarizer import Summarizer
 from src.utils.voice import VoiceHandler
 
 # Logging
@@ -81,6 +82,8 @@ if 'quiz_results_shown' not in st.session_state:
     st.session_state.quiz_results_shown = False
 if 'web_searcher' not in st.session_state:
     st.session_state.web_searcher = None
+if 'summarizer' not in st.session_state:
+    st.session_state.summarizer = None
 
 # Sidebar
 st.sidebar.markdown("# ⚙️ Ayarlar")
@@ -98,6 +101,7 @@ else:
         st.session_state.rag_system = RAGSystem(groq_api_key=groq_api_key)
         st.session_state.web_searcher = FreeWebSearcher()
         st.session_state.quiz_generator = QuizGenerator(groq_api_key=groq_api_key)
+        st.session_state.summarizer = Summarizer(groq_api_key=groq_api_key)
 
 # Sesli özellikler
 st.sidebar.markdown("---")
@@ -134,7 +138,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Tab'lar
-tab1, tab2, tab3, tab4 = st.tabs(["📤 Doküman Yükle", "❓ Soru Sor", "🎓 Quiz", "📊 Yönetim"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📤 Doküman Yükle", "❓ Soru Sor", "🎓 Quiz", "📊 Yönetim", "📝 Özet"])
 
 # TAB 1: Doküman Yükleme
 with tab1:
@@ -465,6 +469,70 @@ with tab4:
     - **Sürüm:** 0.1.0
     - **Groq Bağlı:** {'✅ Evet' if groq_api_key else '❌ Hayır'}
     """)
+
+# TAB 5: Özet Oluştur
+with tab5:
+    st.subheader("📝 Doküman Özeti Oluştur")
+    
+    if not st.session_state.vector_db or st.session_state.vector_db.collection.count() == 0:
+        st.warning("⚠️ Önce bir doküman yükle")
+    else:
+        st.info("💡 Yüklenen dokümanlardan özet oluşturabilirsin")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            summary_type = st.selectbox(
+                "Özet Türü",
+                ["Kısa Özet", "Detaylı Özet", "Madde Başında Özet"],
+                key="summary_type"
+            )
+        
+        with col2:
+            st.write("")
+        
+        type_map = {
+            "Kısa Özet": "general",
+            "Detaylı Özet": "detailed",
+            "Madde Başında Özet": "bullet"
+        }
+        
+        if st.button("🔄 Özet Oluştur", key="generate_summary", use_container_width=True):
+            try:
+                # Tüm dokümanları al
+                documents = st.session_state.vector_db.get_documents()
+                
+                if not documents:
+                    st.error("❌ Doküman bulunamadı")
+                else:
+                    # Dict'ten text ayıkla
+                    full_text = "\n\n".join([doc['text'] for doc in documents])
+                    
+                    with st.spinner("📝 Özet oluşturuluyor..."):
+                        summary = st.session_state.summarizer.summarize(
+                            full_text, 
+                            type_map[summary_type]
+                        )
+                    
+                    st.success("✅ Özet oluşturuldu!")
+                    st.markdown(f"""
+                    <div style='background-color: #f0f2f6; padding: 15px; border-radius: 5px;'>
+                    {summary}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # İndir butonu
+                    st.download_button(
+                        label="📥 Özeti İndir (TXT)",
+                        data=summary,
+                        file_name="ozet.txt",
+                        mime="text/plain",
+                        key="download_summary"
+                    )
+            
+            except Exception as e:
+                st.error(f"❌ Hata: {str(e)}")
+                logger.error(f"Özet hata: {e}")
 
 # Footer
 st.divider()
