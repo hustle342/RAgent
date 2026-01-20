@@ -77,6 +77,8 @@ if 'quiz_questions' not in st.session_state:
     st.session_state.quiz_questions = []
 if 'quiz_answers' not in st.session_state:
     st.session_state.quiz_answers = {}
+if 'quiz_results_shown' not in st.session_state:
+    st.session_state.quiz_results_shown = False
 if 'web_searcher' not in st.session_state:
     st.session_state.web_searcher = None
 
@@ -338,15 +340,17 @@ with tab3:
         col1, col2 = st.columns([1, 3])
         
         with col1:
+            num_quiz_questions = st.slider("Soru Sayısı", min_value=1, max_value=10, value=5)
             if st.button("📝 Sorular Oluştur", use_container_width=True):
                 with st.spinner("🤔 Sorular oluşturuluyor..."):
                     # Doküman metnini al
                     doc_chunks = st.session_state.vector_db.get_documents()
                     if doc_chunks:
                         full_text = " ".join([chunk['text'] for chunk in doc_chunks])
-                        questions = st.session_state.quiz_generator.generate_quiz(full_text, num_questions=5)
+                        questions = st.session_state.quiz_generator.generate_quiz(full_text, num_questions=num_quiz_questions)
                         st.session_state.quiz_questions = questions
                         st.session_state.quiz_answers = {}
+                        st.session_state.quiz_results_shown = False
                         st.success(f"✅ {len(questions)} soru oluşturuldu!")
         
         # Soruları göster
@@ -356,26 +360,38 @@ with tab3:
             for idx, q in enumerate(questions, 1):
                 st.markdown(f"### Soru {idx}: {q['question']}")
                 
-                # Seçenekler
+                # Radio seçimi - başlangıçta seçili olmayacak
                 selected = st.radio(
                     "Cevabı seçin:",
                     options=list(q['options'].keys()),
                     format_func=lambda x: f"{x}) {q['options'][x]}",
-                    key=f"q{idx}"
+                    key=f"q{idx}",
+                    index=None  # Başlangıçta seçili olmayan
                 )
                 
                 # Cevabı kaydet
-                st.session_state.quiz_answers[idx] = selected
+                if selected:
+                    st.session_state.quiz_answers[idx] = selected
                 
                 st.divider()
             
             # Sonuçları göster
             if st.button("✅ Cevapları Kontrol Et", use_container_width=True):
+                st.session_state.quiz_results_shown = True
                 correct = 0
+                results = {}
+                
                 for idx, q in enumerate(questions, 1):
                     if idx in st.session_state.quiz_answers:
-                        if st.session_state.quiz_answers[idx] == q['answer']:
+                        user_answer = st.session_state.quiz_answers[idx]
+                        is_correct = user_answer == q['answer']
+                        if is_correct:
                             correct += 1
+                        results[idx] = {
+                            'user_answer': user_answer,
+                            'correct_answer': q['answer'],
+                            'is_correct': is_correct
+                        }
                 
                 score = (correct / len(questions)) * 100
                 
@@ -388,6 +404,31 @@ with tab3:
                     st.info("👍 İyi gidiş! Biraz daha çalışabilirsin.")
                 else:
                     st.warning("⚠️ Dokümanı daha dikkatli oku ve tekrar dene.")
+                
+                st.markdown("---")
+                st.markdown("### 📋 Detaylı Sonuçlar")
+                
+                # Sorular ve sonuçları göster
+                for idx, q in enumerate(questions, 1):
+                    if idx in results:
+                        res = results[idx]
+                        correct_answer = q['answer']
+                        user_answer = res['user_answer']
+                        
+                        if res['is_correct']:
+                            # Doğru cevap - yeşil
+                            st.markdown(f"✅ **Soru {idx}:** {q['question']}")
+                            st.markdown(f"   🟢 **Cevabınız:** {user_answer}) {q['options'][user_answer]}")
+                        else:
+                            # Yanlış cevap - kırmızı ve yeşil göster
+                            st.markdown(f"❌ **Soru {idx}:** {q['question']}")
+                            st.markdown(f"   🔴 **Yanlış Cevap:** {user_answer}) {q['options'][user_answer]}")
+                            st.markdown(f"   🟢 **Doğru Cevap:** {correct_answer}) {q['options'][correct_answer]}")
+                    else:
+                        st.markdown(f"⚠️ **Soru {idx}:** Cevaplayılmadı")
+                    
+                    st.divider()
+
 
 # TAB 4: Yönetim
 with tab4:
