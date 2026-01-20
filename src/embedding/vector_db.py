@@ -150,6 +150,10 @@ class VectorDatabase:
             logger.error(f"Doküman getirme hatası: {e}")
             return []
     
+    def delete_collection(self):
+        """Koleksiyonu sil"""
+        try:
+            if self.client:
                 self.client.delete_collection(name=self.collection_name)
                 self.collection = None
                 logger.info("Koleksiyon silindi")
