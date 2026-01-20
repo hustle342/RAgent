@@ -81,7 +81,7 @@ Verilen bağlama göre kısa ve özlü cevap ver."""
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}
                 ],
-                temperature=0.7,
+                temperature=0.3,  # Daha düşük = daha tutarlı cevaplar
                 max_tokens=1000
             )
             

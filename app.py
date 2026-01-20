@@ -243,21 +243,41 @@ with tab2:
                         search_results = st.session_state.vector_db.search(question, n_results=3)
                         
                         has_good_result = False
+                        best_distance = 1.0
+                        
                         if search_results:
-                            # Distance kontrolü (0-1 arası, 0 en iyi)
+                            # Distance kontrolü
                             best_distance = search_results[0].get('distance', 1)
-                            has_good_result = best_distance < 0.5  # Threshold düşür
+                            has_good_result = best_distance < 0.8  # Threshold 0.8'e çıkar
+                            
+                            # Debug info
+                            logger.info(f"Benzerlik distance: {best_distance}, Threshold: 0.8, Başarı: {has_good_result}")
                         
                         # 2. Cevap bulunduysa kullan
                         if has_good_result:
-                            st.info("📄 Dokümanlardan bulundu, cevap oluşturuluyor...")
+                            st.info(f"📄 Dokümanlardan bulundu (benzerlik: {best_distance:.3f}), cevap oluşturuluyor...")
                             answer = st.session_state.rag_system.process_question(
                                 question,
                                 st.session_state.vector_db,
                                 k_results=3,
                                 model=model
                             )
-                            source = "📄 Dokümanlardan"
+                            
+                            # Cevap kontrol
+                            if not answer or "bilmiyorum" in answer.lower():
+                                logger.warning(f"Doküman bulundu ama cevap verilemedi: {answer}")
+                                st.warning("⚠️ Doküman bulundu ama cevap oluşturulamadı, web'de aranıyor...")
+                                if use_web_search and st.session_state.web_searcher:
+                                    answer = st.session_state.web_searcher.search_and_answer(
+                                        question,
+                                        st.session_state.rag_system
+                                    )
+                                    source = "🌐 Web'den (fallback)"
+                                else:
+                                    answer = f"Dokümanlardan benzerlik buldum ({best_distance:.1%}) ama cevap oluşturamadım. Web araması devre dışı."
+                                    source = "❌ Hata"
+                            else:
+                                source = "📄 Dokümanlardan"
                         
                         # 3. Bulunmadıysa web'de ara
                         elif use_web_search and st.session_state.web_searcher:
