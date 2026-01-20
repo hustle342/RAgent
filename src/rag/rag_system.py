@@ -61,10 +61,10 @@ class RAGSystem:
             # System prompt - web veya doküman kaynağına göre değiştir
             if from_web:
                 system_prompt = """Sen bir yardımcı asistansın. Verilen web araması sonuçlarına dayanarak soruyu cevapla.
-Web sonuçlarında bilgi varsa cevapla, yoksa "Bilgi bulamadım" de."""
+Kısa ve öz cevap ver. Bilgi varsa paylaş, yoksa "Bilgiye ulaşamadım" de."""
             else:
-                system_prompt = """Sen bir yardımcı asistansın. Sadece verilen kontekste dayanarak soruları cevapla. 
-Eğer kontekste cevap yoksa, "Bunu bilmiyorum, kontekste bu bilgi yok" de."""
+                system_prompt = """Sen bir yardımcı asistansın. Verilen doküman parçalarına dayanarak soruyu cevapla.
+Mümkün olduğunca dokümanın içeriğini kullan. Kısa ve öz cevap ver."""
             
             # User message
             user_message = f"""Bağlam:
