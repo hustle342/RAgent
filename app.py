@@ -17,6 +17,7 @@ from src.ingestion.document_loader import DocumentLoader, TextSplitter
 from src.embedding.vector_db import VectorDatabase
 from src.rag.rag_system import RAGSystem
 from src.rag.web_search import FreeWebSearcher
+from src.rag.quiz_generator import QuizGenerator
 from src.utils.voice import VoiceHandler
 
 # Logging
@@ -72,6 +73,10 @@ if 'document_loaded' not in st.session_state:
     st.session_state.document_loaded = False
 if 'voice_handler' not in st.session_state:
     st.session_state.voice_handler = VoiceHandler()
+if 'quiz_questions' not in st.session_state:
+    st.session_state.quiz_questions = []
+if 'quiz_answers' not in st.session_state:
+    st.session_state.quiz_answers = {}
 if 'web_searcher' not in st.session_state:
     st.session_state.web_searcher = None
 
@@ -90,6 +95,7 @@ else:
     if st.session_state.rag_system is None:
         st.session_state.rag_system = RAGSystem(groq_api_key=groq_api_key)
         st.session_state.web_searcher = FreeWebSearcher()
+        st.session_state.quiz_generator = QuizGenerator(groq_api_key=groq_api_key)
 
 # Sesli özellikler
 st.sidebar.markdown("---")
@@ -126,7 +132,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Tab'lar
-tab1, tab2, tab3 = st.tabs(["📤 Doküman Yükle", "❓ Soru Sor", "📊 Yönetim"])
+tab1, tab2, tab3, tab4 = st.tabs(["📤 Doküman Yükle", "❓ Soru Sor", "🎓 Quiz", "📊 Yönetim"])
 
 # TAB 1: Doküman Yükleme
 with tab1:
@@ -322,8 +328,69 @@ with tab2:
                         st.error(f"❌ Hata: {str(e)}")
                         logger.error(f"Soru işleme hatası: {e}")
 
-# TAB 3: Yönetim
+# TAB 3: Quiz
 with tab3:
+    st.subheader("🎓 Quiz Soruları")
+    
+    if not st.session_state.document_loaded:
+        st.warning("⚠️ Önce bir PDF dosyası yükleyin")
+    else:
+        col1, col2 = st.columns([1, 3])
+        
+        with col1:
+            if st.button("📝 Sorular Oluştur", use_container_width=True):
+                with st.spinner("🤔 Sorular oluşturuluyor..."):
+                    # Doküman metnini al
+                    doc_chunks = st.session_state.vector_db.get_documents()
+                    if doc_chunks:
+                        full_text = " ".join([chunk['text'] for chunk in doc_chunks])
+                        questions = st.session_state.quiz_generator.generate_quiz(full_text, num_questions=5)
+                        st.session_state.quiz_questions = questions
+                        st.session_state.quiz_answers = {}
+                        st.success(f"✅ {len(questions)} soru oluşturuldu!")
+        
+        # Soruları göster
+        if hasattr(st.session_state, 'quiz_questions') and st.session_state.quiz_questions:
+            questions = st.session_state.quiz_questions
+            
+            for idx, q in enumerate(questions, 1):
+                st.markdown(f"### Soru {idx}: {q['question']}")
+                
+                # Seçenekler
+                selected = st.radio(
+                    "Cevabı seçin:",
+                    options=list(q['options'].keys()),
+                    format_func=lambda x: f"{x}) {q['options'][x]}",
+                    key=f"q{idx}"
+                )
+                
+                # Cevabı kaydet
+                st.session_state.quiz_answers[idx] = selected
+                
+                st.divider()
+            
+            # Sonuçları göster
+            if st.button("✅ Cevapları Kontrol Et", use_container_width=True):
+                correct = 0
+                for idx, q in enumerate(questions, 1):
+                    if idx in st.session_state.quiz_answers:
+                        if st.session_state.quiz_answers[idx] == q['answer']:
+                            correct += 1
+                
+                score = (correct / len(questions)) * 100
+                
+                st.markdown("---")
+                st.markdown(f"## 📊 Sonuç: {correct}/{len(questions)} ({score:.0f}%)")
+                
+                if score >= 80:
+                    st.success("🎉 Harika! Çok başarılısın!")
+                elif score >= 60:
+                    st.info("👍 İyi gidiş! Biraz daha çalışabilirsin.")
+                else:
+                    st.warning("⚠️ Dokümanı daha dikkatli oku ve tekrar dene.")
+
+# TAB 4: Yönetim
+with tab4:
     st.subheader("📊 Veritabanı Yönetimi")
     
     if st.session_state.document_loaded:

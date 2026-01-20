@@ -127,10 +127,29 @@ class VectorDatabase:
             logger.error(f"Arama hatası: {e}")
             return []
     
-    def delete_collection(self):
-        """Koleksiyonu sil"""
+    def get_documents(self):
+        """Tüm dokümanları al"""
         try:
-            if self.client:
+            if not self.collection:
+                return []
+            
+            results = self.collection.get()
+            
+            documents = []
+            if results and results['documents']:
+                for i, doc in enumerate(results['documents']):
+                    documents.append({
+                        'text': doc,
+                        'metadata': results['metadatas'][i] if 'metadatas' in results else {}
+                    })
+            
+            logger.info(f"Toplam {len(documents)} doküman getirildi")
+            return documents
+        
+        except Exception as e:
+            logger.error(f"Doküman getirme hatası: {e}")
+            return []
+    
                 self.client.delete_collection(name=self.collection_name)
                 self.collection = None
                 logger.info("Koleksiyon silindi")
