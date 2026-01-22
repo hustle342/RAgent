@@ -729,6 +729,26 @@ with tab3:
                         
                         st.divider()
 
+                    # AI tabanlı analiz ve öneriler
+                    try:
+                        if hasattr(st.session_state, 'quiz_generator') and st.session_state.quiz_generator:
+                            analysis = st.session_state.quiz_generator.analyze_results(questions, results)
+                        else:
+                            analysis = []
+                    except Exception as e:
+                        logger.error(f"Analiz oluşturulurken hata: {e}")
+                        analysis = []
+
+                    if analysis:
+                        st.markdown("---")
+                        st.markdown("### 📈 Analiz ve Öneriler")
+                        for a in analysis:
+                            idx = a.get('index')
+                            note = a.get('note')
+                            st.markdown(f"**Soru {idx}:** {note}")
+                    else:
+                        st.info("Analiz bulunamadı veya tüm sorular doğru. Daha fazla geri bildirim için soruları cevaplayın.")
+
 
 # TAB 4: Yönetim
 with tab4:

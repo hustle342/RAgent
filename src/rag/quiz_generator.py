@@ -158,3 +158,151 @@ Sadece soruları yaz, başka hiçbir şey yazma.
             'options' in q and len(q.get('options', {})) == 4 and
             'answer' in q and q.get('answer') in ['A', 'B', 'C', 'D']
         )
+
+    def analyze_results(self, questions: List[Dict], results: Dict[int, Dict]) -> List[Dict]:
+        """
+        Yanlış cevaplanan sorulara göre kısa, eyleme dönüştürülebilir analiz üretir.
+
+        Args:
+            questions: Üretilmiş sorular listesi (soru, options, answer)
+            results: {index: {user_answer, correct_answer, is_correct}}
+
+        Returns:
+            List of feedback dicts: [{"index": int, "note": str}]
+        """
+        feedbacks = []
+        try:
+            # Hazırla: yalnızca yanlış yapılan soruları modele gönder
+            wrong_items = []
+            for idx, q in enumerate(questions, 1):
+                res = results.get(idx)
+                if not res:
+                    continue
+                if not res.get('is_correct'):
+                    wrong_items.append({
+                        'index': idx,
+                        'question': q.get('question', ''),
+                        'options': q.get('options', {}),
+                        'correct': q.get('answer'),
+                        'user': res.get('user_answer')
+                    })
+
+            if not wrong_items:
+                return []
+
+            # Build prompt in Turkish to get concise study suggestions
+            prompt_lines = [
+                "Aşağıda kullanıcının yanlış cevapladığı quiz soruları var. Her birine kısa ve eyleme dönüştürülebilir geri bildirim yazın (Türkçe).",
+                "Format: JSON listesi, her öğe {\"index\": int, \"feedback\": \"...\"} şeklinde olsun."
+            ]
+
+            for item in wrong_items:
+                opts_text = '\\n'.join([f"{k}) {v}" for k, v in item['options'].items()])
+                prompt_lines.append(f"\nSoru {item['index']}: {item['question']}")
+                prompt_lines.append(opts_text)
+                prompt_lines.append(f"Doğru: {item['correct']}, Kullanıcı: {item['user']}")
+
+            prompt = "\\n".join(prompt_lines)
+
+            message = self.client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": "You are an educational assistant that gives concise, actionable study feedback in Turkish."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=800
+            )
+
+            response = message.choices[0].message.content
+            # Temizle: code fence'leri ve gereksiz başlıkları kaldır
+            clean = response
+            # Remove triple backtick blocks
+            import re, json
+            clean = re.sub(r"```[\s\S]*?```", lambda m: m.group(0).replace('```', ''), clean)
+            clean = clean.strip()
+
+            # Eğer içinde JSON array/object varsa onu çıkar
+            json_candidate = None
+            # Try to find a JSON array [...]
+            arr_match = re.search(r"(\[\s*\{[\s\S]*\}\s*\])", clean)
+            if arr_match:
+                json_candidate = arr_match.group(1)
+            else:
+                # Try to find a JSON object
+                obj_match = re.search(r"(\{[\s\S]*\})", clean)
+                if obj_match:
+                    json_candidate = obj_match.group(1)
+
+            if json_candidate:
+                try:
+                    parsed = json.loads(json_candidate)
+                    # parsed either list or dict
+                    if isinstance(parsed, dict):
+                        # maybe single object or mapping
+                        for p in (parsed.get('items') or [parsed]):
+                            if isinstance(p, dict) and 'index' in p and ('feedback' in p or 'note' in p):
+                                feedbacks.append({'index': p['index'], 'note': p.get('feedback') or p.get('note')})
+                    elif isinstance(parsed, list):
+                        for p in parsed:
+                            if isinstance(p, dict) and 'index' in p and ('feedback' in p or 'note' in p):
+                                feedbacks.append({'index': p['index'], 'note': p.get('feedback') or p.get('note')})
+                    if feedbacks:
+                        return feedbacks
+                except Exception:
+                    # fall through to text parsing
+                    pass
+
+            # Eğer JSON yok veya parse edilemediyse, parse text blocks like 'Soru 3: ...' grouping
+            blocks = {}
+            # Split by lines and collect lines starting with 'Soru <num>:'
+            lines = [ln.strip() for ln in clean.split('\n')]
+            current_idx = None
+            current_buf = []
+            for ln in lines:
+                m = re.match(r"Soru\s*(\d+)\s*[:\-]??\s*(.*)$", ln, flags=re.IGNORECASE)
+                if m:
+                    # commit previous
+                    if current_idx is not None:
+                        blocks[int(current_idx)] = ' '.join(current_buf).strip()
+                    current_idx = m.group(1)
+                    rest = m.group(2) or ''
+                    current_buf = [rest] if rest else []
+                else:
+                    if current_idx is not None:
+                        current_buf.append(ln)
+
+            if current_idx is not None:
+                blocks[int(current_idx)] = ' '.join(current_buf).strip()
+
+            # Map blocks to wrong_items
+            for item in wrong_items:
+                idx = item['index']
+                note = None
+                if idx in blocks and blocks[idx]:
+                    note = blocks[idx]
+                else:
+                    # As fallback, take first meaningful sentence from clean text
+                    # find sentences that mention the index
+                    search_pat = re.compile(rf"Soru\s*{idx}[:\-\s]*(.*)", flags=re.IGNORECASE)
+                    m2 = search_pat.search(clean)
+                    if m2:
+                        note = m2.group(1).strip()
+                if not note:
+                    note = f"Soru {idx}: Yanlış yaptığınız konuya geri dönün ve ilgili bölümü tekrar okuyun. Doğru seçenek: {item.get('correct')}"
+                feedbacks.append({'index': idx, 'note': note})
+            return feedbacks
+
+        except Exception as e:
+            logger.error(f"Quiz analiz hatası: {e}")
+
+        # Basit fallback: otomatik notlar oluştur
+        for idx, q in enumerate(questions, 1):
+            res = results.get(idx)
+            if not res:
+                continue
+            if not res.get('is_correct'):
+                short = f"Soru {idx}: Yanlış yaptığınız konuya geri dönün ve ilgili bölümü tekrar okuyun. Doğru seçenek: {q.get('answer')}"
+                feedbacks.append({'index': idx, 'note': short})
+
+        return feedbacks
