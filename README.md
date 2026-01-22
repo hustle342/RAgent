@@ -1,3 +1,49 @@
+**RAgent — Local Development & Release**
+
+- **What:** Combined Streamlit fallback UI and React Native mobile features for RAgent project.
+- **This release:** current workspace snapshot including Streamlit app (`app.py`) and RN code.
+
+How to run locally (Streamlit):
+
+- Create and activate your Python venv and install deps:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+- Run Streamlit locally (only on this machine):
+
+```bash
+streamlit run app.py --server.port 8501 --server.address 127.0.0.1
+# open http://localhost:8501
+```
+
+Expose temporarily (optional):
+- Use ngrok (recommended for protected access):
+
+```bash
+ngrok config add-authtoken <YOUR_AUTHTOKEN>
+ngrok http 8501 --basic-auth="username:strongpassword"
+```
+
+- Or use localtunnel for a quick public URL (no auth):
+
+```bash
+npx --yes localtunnel --port 8501
+```
+
+Notes & Security:
+- Do not commit ngrok authtokens or secrets. Revoke any token accidentally shared.
+- LocalTunnel URLs are public while the tunnel runs; prefer ngrok with `--basic-auth` for restricted access.
+
+Handoff / next steps for team:
+- Branch: `release/v1.0.0` contains this snapshot.
+- CI/CD: add GitHub Actions workflow if you want automatic deployment.
+- For mobile QA: build `android/app/build/outputs/apk/debug/app-debug.apk` and install on test device.
+
+Contact: Serdar KORKMAZ (repo owner) — update release notes in this file as needed.
 # RAgent 🤖 - Kişisel Bilgi Asistanı
 
 Kullanıcının yüklediği PDF, YouTube linki veya web sitesi içeriğini analiz edip, sadece o kaynaklara dayanarak soruları cevaplayan bir Kişisel Bilgi Asistanı.

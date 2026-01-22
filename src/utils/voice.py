@@ -7,6 +7,7 @@ import logging
 from typing import Optional
 import subprocess
 import os
+from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,37 @@ class VoiceHandler:
         if not self.tts_available:
             logger.warning("TTS hazır değil")
             return False
+
+    def synthesize(self, text: str, language: str = "tr") -> Optional[bytes]:
+        """
+        Metni ses dosyasına çevir ve bayt olarak döndür (TTS oynatma için).
+        Geri dönen mp3, Streamlit'in audio oynatıcısında play/pause/seek yapılabilir.
+        """
+        if not self.tts_available:
+            logger.warning("TTS hazır değil")
+            return None
+
+        try:
+            from gtts import gTTS
+
+            tts = gTTS(text=text, lang='tr' if language == 'tr' else 'en', slow=False)
+            audio_file = '/tmp/speech_summary.mp3'
+            tts.save(audio_file)
+
+            with open(audio_file, 'rb') as f:
+                data = f.read()
+
+            # Temizle
+            try:
+                os.remove(audio_file)
+            except OSError:
+                pass
+
+            logger.info("Metin TTS olarak üretildi (bayt)")
+            return data
+        except Exception as e:
+            logger.error(f"TTS oluşturma hatası: {e}")
+            return None
         
         try:
             # Çok uzun metinleri böl

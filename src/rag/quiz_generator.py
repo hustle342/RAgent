@@ -18,7 +18,7 @@ class QuizGenerator:
         self.client = Groq(api_key=groq_api_key)
         logger.info("Quiz Generator başlatıldı")
     
-    def generate_quiz(self, document_text: str, num_questions: int = 5) -> List[Dict]:
+    def generate_quiz(self, document_text: str, num_questions: int = 5, difficulty: Optional[str] = None) -> List[Dict]:
         """
         Doküman'dan quiz soruları üret
         
@@ -71,6 +71,7 @@ Sadece soruları yaz, başka hiçbir şey yazma.
             response = message.choices[0].message.content
             logger.info(f"Groq yanıt uzunluğu: {len(response)} karaktere")
             logger.debug(f"Tam yanıt:\n{response}")
+            # difficulty currently not used but accepted for API compatibility
             questions = self._parse_questions(response, num_questions)
             logger.info(f"{len(questions)} soru oluşturuldu")
             return questions

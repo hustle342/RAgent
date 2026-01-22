@@ -15,3 +15,5 @@ ddgs==4.1.1
 pyttsx3==2.90
 SpeechRecognition==3.10.0
 gtts==2.4.0
+python-docx==0.8.11
+python-pptx==0.6.23

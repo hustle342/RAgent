@@ -3,7 +3,8 @@ RAG (Retrieval Augmented Generation) Sistemi
 """
 
 import os
-from typing import Optional, List
+import time
+from typing import Optional, List, Dict, Any, Tuple
 import logging
 from dotenv import load_dotenv
 
@@ -74,26 +75,51 @@ Soru: {query}
 
 Verilen bağlama göre kısa ve özlü cevap ver."""
             
-            # Groq API'ye sor
-            message = self.client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message}
-                ],
-                temperature=0.3,  # Daha düşük = daha tutarlı cevaplar
-                max_tokens=1000
-            )
-            
-            answer = message.choices[0].message.content
-            logger.info("Cevap üretildi")
-            return answer
+            # Basit retry ile rate-limit ve geçici hataları yakala
+            retries = 3
+            backoff = 2
+            last_err = None
+
+            for attempt in range(1, retries + 1):
+                try:
+                    message = self.client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_message}
+                        ],
+                        temperature=0.3,
+                        max_tokens=1000
+                    )
+                    answer = message.choices[0].message.content
+                    logger.info("Cevap üretildi")
+                    return answer
+                except Exception as inner_e:
+                    last_err = inner_e
+                    err_text = str(inner_e)
+                    if "429" in err_text or "Rate limit" in err_text or attempt < retries:
+                        sleep_for = backoff * attempt
+                        logger.warning(f"Groq cevabı alınamadı (deneme {attempt}/{retries}): {err_text}. {sleep_for}s bekleniyor.")
+                        time.sleep(sleep_for)
+                    else:
+                        raise
+            if last_err:
+                raise last_err
             
         except Exception as e:
             logger.error(f"Cevap üretme hatası: {e}")
             return None
     
-    def process_question(self, query: str, vector_db, k_results: int = 5, model: str = "llama-3.1-8b-instant") -> Optional[str]:
+    def process_question(
+        self,
+        query: str,
+        vector_db,
+        k_results: int = 5,
+        model: str = "llama-3.1-8b-instant",
+        allowed_sources: Optional[List[str]] = None,
+        required_labels: Optional[List[str]] = None,
+        return_sources: bool = False,
+    ) -> Optional[Any]:
         """
         Tam RAG akışı - Arama + Cevaplama
         
@@ -108,10 +134,16 @@ Verilen bağlama göre kısa ve özlü cevap ver."""
         """
         try:
             # 1. Vektör veritabanında ara
-            search_results = vector_db.search(query, n_results=k_results)
+            search_results = vector_db.search(
+                query,
+                n_results=k_results,
+                allowed_sources=allowed_sources,
+                required_labels=required_labels,
+            )
             
             if not search_results:
-                return "Üzgünüm, bu soruyla ilgili bilgi bulamadım."
+                message = "Üzgünüm, bu soruyla ilgili bilgi bulamadım."
+                return {"answer": message, "sources": []} if return_sources else message
             
             # 2. Konteksti çıkar
             context = [result['text'] for result in search_results]
@@ -119,6 +151,8 @@ Verilen bağlama göre kısa ve özlü cevap ver."""
             # 3. Cevap üret
             answer = self.generate_answer(query, context, model=model)
             
+            if return_sources:
+                return {"answer": answer, "sources": search_results}
             return answer
             
         except Exception as e:

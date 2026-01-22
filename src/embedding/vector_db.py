@@ -67,7 +67,14 @@ class VectorDatabase:
             
             # Meta veriler
             if metadatas is None:
-                metadatas = [{"source": "unknown"} for _ in texts]
+                metadatas = [{"source": "unknown", "labels": ""} for _ in texts]
+            else:
+                for meta in metadatas:
+                    if 'labels' not in meta:
+                        meta['labels'] = ""
+                    elif isinstance(meta['labels'], list):
+                        # Liste ise virgülle ayrılmış string'e çevir
+                        meta['labels'] = ",".join(meta['labels'])
             
             # ChromaDB'ye ekle
             self.collection.add(
@@ -84,7 +91,14 @@ class VectorDatabase:
             logger.error(f"Doküman ekleme hatası: {e}")
             return False
     
-    def search(self, query: str, n_results: int = 5) -> List[Dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        n_results: int = 5,
+        allowed_sources: Optional[List[str]] = None,
+        required_labels: Optional[List[str]] = None,
+        k: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Sorgu yap ve benzer dokümanları bul
         
@@ -105,20 +119,47 @@ class VectorDatabase:
             embedder = EmbeddingManager()
             query_embedding = embedder.embed_text(query)
             
+            # Backwards-compatibility: accept `k` param from callers
+            if k is not None:
+                query_size = max(k * 3, k)
+            else:
+                query_size = max(n_results * 3, n_results)
             results = self.collection.query(
                 query_embeddings=[query_embedding],
-                n_results=n_results
+                n_results=query_size
             )
             
             # Formatla
             documents = []
             if results and results['documents']:
+                # Debug: Tüm sonuçlardaki kaynak isimlerini logla
+                all_sources = [results['metadatas'][0][i].get('source', 'N/A') for i in range(len(results['documents'][0]))]
+                logger.info(f"DB'deki kaynak isimleri: {set(all_sources[:5])}")
+                logger.info(f"Filtre: allowed_sources={allowed_sources}")
+                
                 for i, doc in enumerate(results['documents'][0]):
+                    meta = results['metadatas'][0][i] if 'metadatas' in results else {}
+                    source_name = meta.get('source')
+                    labels_str = meta.get('labels', '') or ''
+                    labels = [lbl.strip() for lbl in labels_str.split(',') if lbl.strip()] if labels_str else []
+
+                    # Kaynak ve etiket filtreleri (sadece liste doluysa uygula)
+                    if allowed_sources is not None and len(allowed_sources) > 0:
+                        if source_name not in allowed_sources:
+                            logger.debug(f"Chunk filtrelendi: '{source_name}' not in {allowed_sources}")
+                            continue
+                    if required_labels:
+                        if not labels or not any(label in labels for label in required_labels):
+                            continue
+
                     documents.append({
                         'text': doc,
                         'distance': results['distances'][0][i] if 'distances' in results else None,
-                        'metadata': results['metadatas'][0][i] if 'metadatas' in results else {}
+                        'metadata': meta
                     })
+
+                    if len(documents) >= n_results:
+                        break
             
             logger.info(f"Arama tamamlandı: {len(documents)} sonuç")
             return documents
