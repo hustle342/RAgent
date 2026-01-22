@@ -743,9 +743,21 @@ with tab3:
                         st.markdown("---")
                         st.markdown("### 📈 Analiz ve Öneriler")
                         for a in analysis:
-                            idx = a.get('index')
-                            note = a.get('note')
-                            st.markdown(f"**Soru {idx}:** {note}")
+                            # New topic-level feedback format
+                            if isinstance(a, dict) and 'topic' in a:
+                                topic = a.get('topic')
+                                advice = a.get('advice') or a.get('note') or ''
+                                confidence = a.get('confidence')
+                                conf_text = f" (Güven: {confidence:.0%})" if isinstance(confidence, float) else ''
+                                st.markdown(f"**Konu:** {topic} — {advice}{conf_text}")
+                            elif isinstance(a, dict) and 'index' in a:
+                                idx = a.get('index')
+                                note = a.get('note') or a.get('advice') or ''
+                                st.markdown(f"**Soru {idx}:** {note}")
+                            elif isinstance(a, dict) and 'notes' in a:
+                                st.markdown(f"*{a.get('notes')}*")
+                            else:
+                                st.markdown(f"- {a}")
                     else:
                         st.info("Analiz bulunamadı veya tüm sorular doğru. Daha fazla geri bildirim için soruları cevaplayın.")
 

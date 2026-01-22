@@ -160,19 +160,14 @@ Sadece soruları yaz, başka hiçbir şey yazma.
         )
 
     def analyze_results(self, questions: List[Dict], results: Dict[int, Dict]) -> List[Dict]:
-        """
-        Yanlış cevaplanan sorulara göre kısa, eyleme dönüştürülebilir analiz üretir.
+        """Generate topic-level, human-friendly feedback from quiz results.
 
-        Args:
-            questions: Üretilmiş sorular listesi (soru, options, answer)
-            results: {index: {user_answer, correct_answer, is_correct}}
-
-        Returns:
-            List of feedback dicts: [{"index": int, "note": str}]
+        Returns a list of feedback dicts, e.g. [{'topic': '...', 'confidence': 0.7, 'advice': '...'}, ...]
         """
-        feedbacks = []
+        feedbacks: List[Dict] = []
+
         try:
-            # Hazırla: yalnızca yanlış yapılan soruları modele gönder
+            # Collect wrong items
             wrong_items = []
             for idx, q in enumerate(questions, 1):
                 res = results.get(idx)
@@ -190,24 +185,24 @@ Sadece soruları yaz, başka hiçbir şey yazma.
             if not wrong_items:
                 return []
 
-            # Build prompt in Turkish to get concise study suggestions
+            # Prompt the LLM to return topic-level feedback in JSON
             prompt_lines = [
-                "Aşağıda kullanıcının yanlış cevapladığı quiz soruları var. Her birine kısa ve eyleme dönüştürülebilir geri bildirim yazın (Türkçe).",
-                "Format: JSON listesi, her öğe {\"index\": int, \"feedback\": \"...\"} şeklinde olsun."
+                "Kullanıcının yanlış cevapladığı quiz soruları aşağıda. Bu yanlışlardan hangi genel konularda eksikliği olduğunu anlamaya çalış ve her konu için kısa, insanın anlayacağı, eyleme dönüştürülebilir öneriler ver (Türkçe).",
+                "Cevap formatı JSON olmalı: {\"topics\": [{\"topic\": \"<konu adı>\", \"confidence\": 0-1, \"advice\": \"kısa öneri\"}], \"notes\": \"opsiyonel kısa not\" }"
             ]
 
             for item in wrong_items:
-                opts_text = '\\n'.join([f"{k}) {v}" for k, v in item['options'].items()])
+                opts_text = '\n'.join([f"{k}) {v}" for k, v in item['options'].items()])
                 prompt_lines.append(f"\nSoru {item['index']}: {item['question']}")
                 prompt_lines.append(opts_text)
                 prompt_lines.append(f"Doğru: {item['correct']}, Kullanıcı: {item['user']}")
 
-            prompt = "\\n".join(prompt_lines)
+            prompt = "\n".join(prompt_lines)
 
             message = self.client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
-                    {"role": "system", "content": "You are an educational assistant that gives concise, actionable study feedback in Turkish."},
+                    {"role": "system", "content": "You are an educational assistant. Infer topic-level weaknesses from wrong multiple-choice answers and provide concise study advice in Turkish. Return JSON only."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
@@ -215,21 +210,16 @@ Sadece soruları yaz, başka hiçbir şey yazma.
             )
 
             response = message.choices[0].message.content
-            # Temizle: code fence'leri ve gereksiz başlıkları kaldır
-            clean = response
-            # Remove triple backtick blocks
-            import re, json
-            clean = re.sub(r"```[\s\S]*?```", lambda m: m.group(0).replace('```', ''), clean)
-            clean = clean.strip()
 
-            # Eğer içinde JSON array/object varsa onu çıkar
+            # Try to extract JSON from the LLM response
+            import re, json
+            clean = re.sub(r"```[\s\S]*?```", lambda m: m.group(0).replace('```', ''), response).strip()
+
             json_candidate = None
-            # Try to find a JSON array [...]
-            arr_match = re.search(r"(\[\s*\{[\s\S]*\}\s*\])", clean)
+            arr_match = re.search(r"(\{\s*\"topics\"[\s\S]*\})", clean)
             if arr_match:
                 json_candidate = arr_match.group(1)
             else:
-                # Try to find a JSON object
                 obj_match = re.search(r"(\{[\s\S]*\})", clean)
                 if obj_match:
                     json_candidate = obj_match.group(1)
@@ -237,72 +227,70 @@ Sadece soruları yaz, başka hiçbir şey yazma.
             if json_candidate:
                 try:
                     parsed = json.loads(json_candidate)
-                    # parsed either list or dict
-                    if isinstance(parsed, dict):
-                        # maybe single object or mapping
-                        for p in (parsed.get('items') or [parsed]):
-                            if isinstance(p, dict) and 'index' in p and ('feedback' in p or 'note' in p):
-                                feedbacks.append({'index': p['index'], 'note': p.get('feedback') or p.get('note')})
-                    elif isinstance(parsed, list):
-                        for p in parsed:
-                            if isinstance(p, dict) and 'index' in p and ('feedback' in p or 'note' in p):
-                                feedbacks.append({'index': p['index'], 'note': p.get('feedback') or p.get('note')})
-                    if feedbacks:
+                    topics = parsed.get('topics') if isinstance(parsed, dict) else None
+                    if topics and isinstance(topics, list):
+                        for t in topics:
+                            topic = t.get('topic') or t.get('name') or 'Genel'
+                            confidence = float(t.get('confidence', 0)) if t.get('confidence', None) is not None else 0.0
+                            advice = t.get('advice') or t.get('suggestion') or t.get('note') or ''
+                            feedbacks.append({'topic': topic, 'confidence': confidence, 'advice': advice})
+                        notes = parsed.get('notes') if isinstance(parsed, dict) else None
+                        if notes:
+                            feedbacks.append({'notes': notes})
                         return feedbacks
                 except Exception:
-                    # fall through to text parsing
+                    # fall through to plain-text fallback
                     pass
 
-            # Eğer JSON yok veya parse edilemediyse, parse text blocks like 'Soru 3: ...' grouping
-            blocks = {}
-            # Split by lines and collect lines starting with 'Soru <num>:'
-            lines = [ln.strip() for ln in clean.split('\n')]
-            current_idx = None
-            current_buf = []
-            for ln in lines:
-                m = re.match(r"Soru\s*(\d+)\s*[:\-]??\s*(.*)$", ln, flags=re.IGNORECASE)
+            # Fallback: ask for plain-language topic lines and parse them
+            fallback_prompt = (
+                "Aşağıdaki yanlış cevaplardan hangi konularda eksikliği olduğunu kısa maddeler halinde yaz (Türkçe). "
+                "Format her satır: Konu: <konu> - Öneri: <kısa metin>\n\n"
+                + '\n'.join([f"Soru {it['index']}: {it['question']} (Doğru: {it['correct']}, Kullanıcı: {it['user']})" for it in wrong_items])
+            )
+
+            fallback_msg = self.client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": "You are an educational assistant. Provide topic-level weaknesses and short study advice in Turkish, one per line."},
+                    {"role": "user", "content": fallback_prompt}
+                ],
+                temperature=0.2,
+                max_tokens=400
+            )
+
+            fb_text = fallback_msg.choices[0].message.content
+            for line in [l.strip() for l in fb_text.split('\n') if l.strip()]:
+                m = re.match(r"(?:Konu\s*[:\-]?\s*)?(.*?)-\s*Öneri\s*[:\-]?\s*(.*)$", line, flags=re.IGNORECASE)
                 if m:
-                    # commit previous
-                    if current_idx is not None:
-                        blocks[int(current_idx)] = ' '.join(current_buf).strip()
-                    current_idx = m.group(1)
-                    rest = m.group(2) or ''
-                    current_buf = [rest] if rest else []
+                    topic = m.group(1).strip()
+                    advice = m.group(2).strip()
+                    feedbacks.append({'topic': topic or 'Genel', 'confidence': 0.5, 'advice': advice})
                 else:
-                    if current_idx is not None:
-                        current_buf.append(ln)
+                    feedbacks.append({'topic': 'Genel', 'confidence': 0.3, 'advice': line})
 
-            if current_idx is not None:
-                blocks[int(current_idx)] = ' '.join(current_buf).strip()
-
-            # Map blocks to wrong_items
-            for item in wrong_items:
-                idx = item['index']
-                note = None
-                if idx in blocks and blocks[idx]:
-                    note = blocks[idx]
-                else:
-                    # As fallback, take first meaningful sentence from clean text
-                    # find sentences that mention the index
-                    search_pat = re.compile(rf"Soru\s*{idx}[:\-\s]*(.*)", flags=re.IGNORECASE)
-                    m2 = search_pat.search(clean)
-                    if m2:
-                        note = m2.group(1).strip()
-                if not note:
-                    note = f"Soru {idx}: Yanlış yaptığınız konuya geri dönün ve ilgili bölümü tekrar okuyun. Doğru seçenek: {item.get('correct')}"
-                feedbacks.append({'index': idx, 'note': note})
             return feedbacks
 
         except Exception as e:
             logger.error(f"Quiz analiz hatası: {e}")
 
-        # Basit fallback: otomatik notlar oluştur
+        # Final simple fallback: aggregate wrong answers into simple topics
+        topic_map: Dict[str, int] = {}
         for idx, q in enumerate(questions, 1):
             res = results.get(idx)
             if not res:
                 continue
             if not res.get('is_correct'):
-                short = f"Soru {idx}: Yanlış yaptığınız konuya geri dönün ve ilgili bölümü tekrar okuyun. Doğru seçenek: {q.get('answer')}"
-                feedbacks.append({'index': idx, 'note': short})
+                words = q.get('question', '').split()
+                topic = ' '.join(words[:6]) if words else 'Genel'
+                topic_map.setdefault(topic, 0)
+                topic_map[topic] += 1
+
+        for t, cnt in topic_map.items():
+            feedbacks.append({
+                'topic': t,
+                'confidence': min(0.6, 0.2 + 0.1 * cnt),
+                'advice': f"Bu konuyu tekrar gözden geçir: '{t}'. Özetleri oku ve ilgili örnek soruları çöz."
+            })
 
         return feedbacks
