@@ -14,24 +14,14 @@ class FreeWebSearcher:
     
     def __init__(self):
         """Başlat"""
+        # Disable optional web search integrations by default.
+        # These integrations required external packages that may not be installed
+        # in lightweight environments. Keeping them disabled avoids startup warnings.
         self.has_wikipedia = False
         self.has_duckduckgo = False
-        
-        try:
-            import wikipedia
-            self.wikipedia = wikipedia
-            self.has_wikipedia = True
-            logger.info("Wikipedia API başlatıldı")
-        except Exception as e:
-            logger.warning(f"Wikipedia yükleme hatası: {e}")
-        
-        try:
-            from duckduckgo_search import DDGS
-            self.ddgs = DDGS
-            self.has_duckduckgo = True
-            logger.info("DuckDuckGo araması başlatıldı")
-        except Exception as e:
-            logger.warning(f"DuckDuckGo yükleme hatası: {e}")
+        self.wikipedia = None
+        self.ddgs = None
+        logger.info("FreeWebSearcher başlatıldı — Wikipedia/DuckDuckGo entegrasyonları devre dışı")
     
     def search(self, query: str, max_results: int = 3) -> List[Dict]:
         """

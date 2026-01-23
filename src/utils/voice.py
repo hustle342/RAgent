@@ -7,6 +7,7 @@ import logging
 from typing import Optional
 import subprocess
 import os
+from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +37,10 @@ class VoiceHandler:
                 logger.warning("TTS (gtts/espeak) bulunamadı")
         
         # Speech-to-Text
-        try:
-            import speech_recognition as sr
-            self.recognizer = sr.Recognizer()
-            self.stt_available = True
-            logger.info("Speech-to-Text başlatıldı")
-        except Exception as e:
-            logger.warning(f"Speech-to-Text yükleme hatası: {e}")
-            self.recognizer = None
+        # Speech-to-Text: do not import optional `speech_recognition` at startup
+        # to avoid startup warnings in environments where it's not installed.
+        self.recognizer = None
+        self.stt_available = False
     
     def speak(self, text: str, language: str = "tr") -> bool:
         """
@@ -59,6 +56,37 @@ class VoiceHandler:
         if not self.tts_available:
             logger.warning("TTS hazır değil")
             return False
+
+    def synthesize(self, text: str, language: str = "tr") -> Optional[bytes]:
+        """
+        Metni ses dosyasına çevir ve bayt olarak döndür (TTS oynatma için).
+        Geri dönen mp3, Streamlit'in audio oynatıcısında play/pause/seek yapılabilir.
+        """
+        if not self.tts_available:
+            logger.warning("TTS hazır değil")
+            return None
+
+        try:
+            from gtts import gTTS
+
+            tts = gTTS(text=text, lang='tr' if language == 'tr' else 'en', slow=False)
+            audio_file = '/tmp/speech_summary.mp3'
+            tts.save(audio_file)
+
+            with open(audio_file, 'rb') as f:
+                data = f.read()
+
+            # Temizle
+            try:
+                os.remove(audio_file)
+            except OSError:
+                pass
+
+            logger.info("Metin TTS olarak üretildi (bayt)")
+            return data
+        except Exception as e:
+            logger.error(f"TTS oluşturma hatası: {e}")
+            return None
         
         try:
             # Çok uzun metinleri böl
@@ -109,28 +137,8 @@ class VoiceHandler:
         if not self.stt_available or not self.recognizer:
             logger.warning("STT hazır değil")
             return None
-        
-        try:
-            import speech_recognition as sr
-            
-            with sr.Microphone() as source:
-                logger.info("Dinleniyor...")
-                audio = self.recognizer.listen(source, timeout=timeout)
-            
-            # Google Speech Recognition kullan (ücretsiz)
-            text = self.recognizer.recognize_google(audio, language="tr-TR")
-            logger.info(f"Tanınan metin: {text}")
-            return text
-            
-        except sr.UnknownValueError:
-            logger.warning("Ses anlaşılamadı")
-            return None
-        except sr.RequestError as e:
-            logger.error(f"Speech Recognition hatası: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Dinleme hatası: {e}")
-            return None
+        # STT is disabled or not configured; return None
+        return None
     
     def is_available(self) -> dict:
         """Kullanılabilir özellikleri kontrol et"""

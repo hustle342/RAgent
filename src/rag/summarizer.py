@@ -4,6 +4,7 @@ PDF dokümanlarının özetini oluştur
 """
 
 import logging
+import time
 from typing import Optional
 from groq import Groq
 
@@ -34,20 +35,23 @@ class Summarizer:
                 return "📝 Özet oluşturmak için doküman metni gerekli."
             
             # Özet türüne göre prompt
+            trimmed_text = document_text[:6000]
+
             if summary_type == "bullet":
-                prompt = f"""Aşağıdaki metni 5-7 ana nokta olarak özetle. 
-Her nokta bir maddede olmalı (•).
+                prompt = f"""Aşağıdaki metni 6-9 ana madde olarak özetle. 
+Her madde tek satır ve açık olsun (• kullan).
 
 Metin:
-{document_text[:3000]}
+{trimmed_text}
 
 Özet (Madde Başında):"""
             elif summary_type == "detailed":
-                prompt = f"""Aşağıdaki metni detaylı olarak özetle. 
-2-3 paragraf, tüm önemli noktaları içermeli.
+                prompt = f"""Aşağıdaki metni kapsamlı şekilde özetle.
+4-6 paragraf yaz; bağlam, ana argümanlar, önemli bulgular ve çıkarımları dahil et.
+Gerekirse kısa alt örnekler ve rakamlar ekle.
 
 Metin:
-{document_text[:3000]}
+{trimmed_text}
 
 Detaylı Özet:"""
             else:  # general
@@ -55,26 +59,42 @@ Detaylı Özet:"""
 1-2 paragraf, ana konuları içermeli.
 
 Metin:
-{document_text[:3000]}
+{trimmed_text}
 
 Özet:"""
             
-            message = self.client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Sen yetkin bir özetci asistansın. Verilen metni kısa, anlaşılır ve bilgilendirici şekilde özetle."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                max_tokens=1500
-            )
-            
-            summary = message.choices[0].message.content
-            logger.info(f"Özet oluşturuldu: {len(summary)} karakter")
-            return summary
+            retries = 3
+            backoff = 2
+            last_err = None
+
+            for attempt in range(1, retries + 1):
+                try:
+                    message = self.client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "Sen yetkin bir özetci asistansın. Verilen metni kısa, anlaşılır ve bilgilendirici şekilde özetle."
+                            },
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.3,
+                        max_tokens=2200
+                    )
+                    summary = message.choices[0].message.content
+                    logger.info(f"Özet oluşturuldu: {len(summary)} karakter")
+                    return summary
+                except Exception as inner_e:
+                    last_err = inner_e
+                    err_text = str(inner_e)
+                    if "429" in err_text or "Rate limit" in err_text or attempt < retries:
+                        sleep_for = backoff * attempt
+                        logger.warning(f"Özet alınamadı (deneme {attempt}/{retries}): {err_text}. {sleep_for}s bekleniyor.")
+                        time.sleep(sleep_for)
+                    else:
+                        raise
+            if last_err:
+                raise last_err
             
         except Exception as e:
             logger.error(f"Özet oluşturma hatası: {e}")

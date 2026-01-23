@@ -18,7 +18,7 @@ class QuizGenerator:
         self.client = Groq(api_key=groq_api_key)
         logger.info("Quiz Generator başlatıldı")
     
-    def generate_quiz(self, document_text: str, num_questions: int = 5) -> List[Dict]:
+    def generate_quiz(self, document_text: str, num_questions: int = 5, difficulty: Optional[str] = None) -> List[Dict]:
         """
         Doküman'dan quiz soruları üret
         
@@ -71,6 +71,7 @@ Sadece soruları yaz, başka hiçbir şey yazma.
             response = message.choices[0].message.content
             logger.info(f"Groq yanıt uzunluğu: {len(response)} karaktere")
             logger.debug(f"Tam yanıt:\n{response}")
+            # difficulty currently not used but accepted for API compatibility
             questions = self._parse_questions(response, num_questions)
             logger.info(f"{len(questions)} soru oluşturuldu")
             return questions
@@ -157,3 +158,139 @@ Sadece soruları yaz, başka hiçbir şey yazma.
             'options' in q and len(q.get('options', {})) == 4 and
             'answer' in q and q.get('answer') in ['A', 'B', 'C', 'D']
         )
+
+    def analyze_results(self, questions: List[Dict], results: Dict[int, Dict]) -> List[Dict]:
+        """Generate topic-level, human-friendly feedback from quiz results.
+
+        Returns a list of feedback dicts, e.g. [{'topic': '...', 'confidence': 0.7, 'advice': '...'}, ...]
+        """
+        feedbacks: List[Dict] = []
+
+        try:
+            # Collect wrong items
+            wrong_items = []
+            for idx, q in enumerate(questions, 1):
+                res = results.get(idx)
+                if not res:
+                    continue
+                if not res.get('is_correct'):
+                    wrong_items.append({
+                        'index': idx,
+                        'question': q.get('question', ''),
+                        'options': q.get('options', {}),
+                        'correct': q.get('answer'),
+                        'user': res.get('user_answer')
+                    })
+
+            if not wrong_items:
+                return []
+
+            # Prompt the LLM to return topic-level feedback in JSON
+            prompt_lines = [
+                "Kullanıcının yanlış cevapladığı quiz soruları aşağıda. Bu yanlışlardan hangi genel konularda eksikliği olduğunu anlamaya çalış ve her konu için kısa, insanın anlayacağı, eyleme dönüştürülebilir öneriler ver (Türkçe).",
+                "Cevap formatı JSON olmalı: {\"topics\": [{\"topic\": \"<konu adı>\", \"confidence\": 0-1, \"advice\": \"kısa öneri\"}], \"notes\": \"opsiyonel kısa not\" }"
+            ]
+
+            for item in wrong_items:
+                opts_text = '\n'.join([f"{k}) {v}" for k, v in item['options'].items()])
+                prompt_lines.append(f"\nSoru {item['index']}: {item['question']}")
+                prompt_lines.append(opts_text)
+                prompt_lines.append(f"Doğru: {item['correct']}, Kullanıcı: {item['user']}")
+
+            prompt = "\n".join(prompt_lines)
+
+            message = self.client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": "You are an educational assistant. Infer topic-level weaknesses from wrong multiple-choice answers and provide concise study advice in Turkish. Return JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=800
+            )
+
+            response = message.choices[0].message.content
+
+            # Try to extract JSON from the LLM response
+            import re, json
+            clean = re.sub(r"```[\s\S]*?```", lambda m: m.group(0).replace('```', ''), response).strip()
+
+            json_candidate = None
+            arr_match = re.search(r"(\{\s*\"topics\"[\s\S]*\})", clean)
+            if arr_match:
+                json_candidate = arr_match.group(1)
+            else:
+                obj_match = re.search(r"(\{[\s\S]*\})", clean)
+                if obj_match:
+                    json_candidate = obj_match.group(1)
+
+            if json_candidate:
+                try:
+                    parsed = json.loads(json_candidate)
+                    topics = parsed.get('topics') if isinstance(parsed, dict) else None
+                    if topics and isinstance(topics, list):
+                        for t in topics:
+                            topic = t.get('topic') or t.get('name') or 'Genel'
+                            confidence = float(t.get('confidence', 0)) if t.get('confidence', None) is not None else 0.0
+                            advice = t.get('advice') or t.get('suggestion') or t.get('note') or ''
+                            feedbacks.append({'topic': topic, 'confidence': confidence, 'advice': advice})
+                        notes = parsed.get('notes') if isinstance(parsed, dict) else None
+                        if notes:
+                            feedbacks.append({'notes': notes})
+                        return feedbacks
+                except Exception:
+                    # fall through to plain-text fallback
+                    pass
+
+            # Fallback: ask for plain-language topic lines and parse them
+            fallback_prompt = (
+                "Aşağıdaki yanlış cevaplardan hangi konularda eksikliği olduğunu kısa maddeler halinde yaz (Türkçe). "
+                "Format her satır: Konu: <konu> - Öneri: <kısa metin>\n\n"
+                + '\n'.join([f"Soru {it['index']}: {it['question']} (Doğru: {it['correct']}, Kullanıcı: {it['user']})" for it in wrong_items])
+            )
+
+            fallback_msg = self.client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": "You are an educational assistant. Provide topic-level weaknesses and short study advice in Turkish, one per line."},
+                    {"role": "user", "content": fallback_prompt}
+                ],
+                temperature=0.2,
+                max_tokens=400
+            )
+
+            fb_text = fallback_msg.choices[0].message.content
+            for line in [l.strip() for l in fb_text.split('\n') if l.strip()]:
+                m = re.match(r"(?:Konu\s*[:\-]?\s*)?(.*?)-\s*Öneri\s*[:\-]?\s*(.*)$", line, flags=re.IGNORECASE)
+                if m:
+                    topic = m.group(1).strip()
+                    advice = m.group(2).strip()
+                    feedbacks.append({'topic': topic or 'Genel', 'confidence': 0.5, 'advice': advice})
+                else:
+                    feedbacks.append({'topic': 'Genel', 'confidence': 0.3, 'advice': line})
+
+            return feedbacks
+
+        except Exception as e:
+            logger.error(f"Quiz analiz hatası: {e}")
+
+        # Final simple fallback: aggregate wrong answers into simple topics
+        topic_map: Dict[str, int] = {}
+        for idx, q in enumerate(questions, 1):
+            res = results.get(idx)
+            if not res:
+                continue
+            if not res.get('is_correct'):
+                words = q.get('question', '').split()
+                topic = ' '.join(words[:6]) if words else 'Genel'
+                topic_map.setdefault(topic, 0)
+                topic_map[topic] += 1
+
+        for t, cnt in topic_map.items():
+            feedbacks.append({
+                'topic': t,
+                'confidence': min(0.6, 0.2 + 0.1 * cnt),
+                'advice': f"Bu konuyu tekrar gözden geçir: '{t}'. Özetleri oku ve ilgili örnek soruları çöz."
+            })
+
+        return feedbacks

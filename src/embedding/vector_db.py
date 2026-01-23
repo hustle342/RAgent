@@ -22,10 +22,10 @@ class VectorDatabase:
         """
         try:
             import chromadb
-            
+
             # Dizin oluştur
             os.makedirs(db_path, exist_ok=True)
-            
+
             # ChromaDB client
             self.client = chromadb.PersistentClient(path=db_path)
             self.collection = self.client.get_or_create_collection(
@@ -34,13 +34,29 @@ class VectorDatabase:
             )
             self.db_path = db_path
             self.collection_name = collection_name
-            
+            self.fallback = False
+
             logger.info(f"Vector Database başlatıldı: {db_path}")
-            
+
         except Exception as e:
-            logger.error(f"Vector Database başlatma hatası: {e}")
+            # Eğer chromadb yüklü değilse, basit bir fallback dosya tabanlı depolama kullan
+            logger.warning(f"Vector Database başlatma hatası, chromadb yok veya hata oluştu: {e}. Fallback mode etkinleştiriliyor.")
             self.client = None
             self.collection = None
+            self.fallback = True
+            # Fallback veri dosyası
+            self.fallback_path = os.path.join(db_path, "fallback_db.json")
+            os.makedirs(os.path.dirname(self.fallback_path), exist_ok=True)
+            # Yükle varsa
+            try:
+                import json
+                if os.path.exists(self.fallback_path):
+                    with open(self.fallback_path, 'r', encoding='utf-8') as fh:
+                        self._fallback_db = json.load(fh)
+                else:
+                    self._fallback_db = {"ids": [], "documents": [], "metadatas": []}
+            except Exception:
+                self._fallback_db = {"ids": [], "documents": [], "metadatas": []}
     
     def add_documents(self, texts: List[str], metadatas: Optional[List[Dict[str, Any]]] = None, ids: Optional[List[str]] = None):
         """
@@ -51,13 +67,13 @@ class VectorDatabase:
             metadatas: Meta veriler
             ids: Doküman ID'leri
         """
-        if self.collection is None:
-            logger.error("Koleksiyon hazır değil")
+        if self.collection is None and not getattr(self, 'fallback', False):
+            logger.error("Koleksiyon hazır değil ve fallback devre dışı")
             return False
         
         try:
             from src.embedding.embedder import EmbeddingManager
-            
+
             embedder = EmbeddingManager()
             embeddings = embedder.embed_batch(texts)
             
@@ -67,8 +83,31 @@ class VectorDatabase:
             
             # Meta veriler
             if metadatas is None:
-                metadatas = [{"source": "unknown"} for _ in texts]
+                metadatas = [{"source": "unknown", "labels": ""} for _ in texts]
+            else:
+                for meta in metadatas:
+                    if 'labels' not in meta:
+                        meta['labels'] = ""
+                    elif isinstance(meta['labels'], list):
+                        # Liste ise virgülle ayrılmış string'e çevir
+                        meta['labels'] = ",".join(meta['labels'])
             
+            # Eğer chromadb yoksa, fallback dosyaya yaz
+            if getattr(self, 'fallback', False):
+                try:
+                    import json
+                    for i, txt in enumerate(texts):
+                        self._fallback_db['ids'].append(ids[i])
+                        self._fallback_db['documents'].append(txt)
+                        self._fallback_db['metadatas'].append(metadatas[i])
+                    with open(self.fallback_path, 'w', encoding='utf-8') as fh:
+                        json.dump(self._fallback_db, fh, ensure_ascii=False, indent=2)
+                    logger.info(f"{len(texts)} doküman fallback DB'ye eklendi")
+                    return True
+                except Exception as e:
+                    logger.error(f"Fallback DB'ye yazma hatası: {e}")
+                    return False
+
             # ChromaDB'ye ekle
             self.collection.add(
                 embeddings=embeddings,
@@ -76,7 +115,7 @@ class VectorDatabase:
                 metadatas=metadatas,
                 ids=ids
             )
-            
+
             logger.info(f"{len(texts)} doküman eklendi")
             return True
             
@@ -84,7 +123,14 @@ class VectorDatabase:
             logger.error(f"Doküman ekleme hatası: {e}")
             return False
     
-    def search(self, query: str, n_results: int = 5) -> List[Dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        n_results: int = 5,
+        allowed_sources: Optional[List[str]] = None,
+        required_labels: Optional[List[str]] = None,
+        k: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Sorgu yap ve benzer dokümanları bul
         
@@ -95,7 +141,7 @@ class VectorDatabase:
         Returns:
             Benzer dokümanlar listesi
         """
-        if self.collection is None:
+        if self.collection is None and not getattr(self, 'fallback', False):
             logger.error("Koleksiyon hazır değil")
             return []
         
@@ -105,20 +151,76 @@ class VectorDatabase:
             embedder = EmbeddingManager()
             query_embedding = embedder.embed_text(query)
             
+            # Backwards-compatibility: accept `k` param from callers
+            if k is not None:
+                query_size = max(k * 3, k)
+            else:
+                query_size = max(n_results * 3, n_results)
+            # Eğer fallback moddaysak, basit substring tabanlı arama yap
+            if getattr(self, 'fallback', False):
+                documents = []
+                for i, doc in enumerate(self._fallback_db.get('documents', [])):
+                    meta = self._fallback_db.get('metadatas', [])[i] if 'metadatas' in self._fallback_db else {}
+                    source_name = meta.get('source')
+
+                    # Kaynak filtresi
+                    if allowed_sources is not None and len(allowed_sources) > 0:
+                        if source_name not in allowed_sources:
+                            continue
+
+                    # Basit eşleşme: query substring ise düşük distance
+                    if query.lower() in doc.lower():
+                        distance = 0.0
+                    else:
+                        distance = 1.0
+
+                    documents.append({
+                        'text': doc,
+                        'distance': distance,
+                        'metadata': meta
+                    })
+
+                # Sırala ve en iyi n_results döndür
+                documents = sorted(documents, key=lambda x: x['distance'])[:n_results]
+                logger.info(f"Fallback arama tamamlandı: {len(documents)} sonuç")
+                return documents
+
             results = self.collection.query(
                 query_embeddings=[query_embedding],
-                n_results=n_results
+                n_results=query_size
             )
             
             # Formatla
             documents = []
             if results and results['documents']:
+                # Debug: Tüm sonuçlardaki kaynak isimlerini logla
+                all_sources = [results['metadatas'][0][i].get('source', 'N/A') for i in range(len(results['documents'][0]))]
+                logger.info(f"DB'deki kaynak isimleri: {set(all_sources[:5])}")
+                logger.info(f"Filtre: allowed_sources={allowed_sources}")
+                
                 for i, doc in enumerate(results['documents'][0]):
+                    meta = results['metadatas'][0][i] if 'metadatas' in results else {}
+                    source_name = meta.get('source')
+                    labels_str = meta.get('labels', '') or ''
+                    labels = [lbl.strip() for lbl in labels_str.split(',') if lbl.strip()] if labels_str else []
+
+                    # Kaynak ve etiket filtreleri (sadece liste doluysa uygula)
+                    if allowed_sources is not None and len(allowed_sources) > 0:
+                        if source_name not in allowed_sources:
+                            logger.debug(f"Chunk filtrelendi: '{source_name}' not in {allowed_sources}")
+                            continue
+                    if required_labels:
+                        if not labels or not any(label in labels for label in required_labels):
+                            continue
+
                     documents.append({
                         'text': doc,
                         'distance': results['distances'][0][i] if 'distances' in results else None,
-                        'metadata': results['metadatas'][0][i] if 'metadatas' in results else {}
+                        'metadata': meta
                     })
+
+                    if len(documents) >= n_results:
+                        break
             
             logger.info(f"Arama tamamlandı: {len(documents)} sonuç")
             return documents
