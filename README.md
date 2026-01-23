@@ -139,8 +139,8 @@ RAgent/
 MIT
 
 ## 👨‍💻 Geliştirici
-
-Serdar Pop
+Serdar KORKMAZ
+Sıtkı Efe KILINÇ
 
 ---
 
