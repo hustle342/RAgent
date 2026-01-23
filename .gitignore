@@ -35,3 +35,6 @@ Thumbs.db
 # Project specific
 *.pkl
 *.pickle
+
+# Temporary uploads created by the app
+temp_uploads/
