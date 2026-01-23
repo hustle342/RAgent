@@ -38,3 +38,6 @@ Thumbs.db
 
 # Temporary uploads created by the app
 temp_uploads/
+
+# Node modules (frontend dependencies)
+node_modules/
