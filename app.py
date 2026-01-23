@@ -158,11 +158,11 @@ if 'web_searcher' not in st.session_state:
 if 'summarizer' not in st.session_state:
     st.session_state.summarizer = None
 if 'loaded_documents' not in st.session_state:
-    st.session_state.loaded_documents = {}  # {doc_name: {data, active}}
+    st.session_state.loaded_documents = {}  
 if 'active_documents' not in st.session_state:
-    st.session_state.active_documents = []  # Aktif dokümanlarin adları
+    st.session_state.active_documents = []  
 if 'selected_labels' not in st.session_state:
-    st.session_state.selected_labels = []  # Etiket filtreleri
+    st.session_state.selected_labels = [] 
 if 'summary_audio' not in st.session_state:
     st.session_state.summary_audio = None
 if 'summary_text' not in st.session_state:
