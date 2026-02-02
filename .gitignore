@@ -10,14 +10,22 @@ env/
 .venv
 
 # IDE
+.DS_Store
 .vscode/
 .idea/
 *.swp
 *.swo
 
+.vs/
+*.user
+*.suo
+
 # Environment
 .env
 .env.local
+appsettings.json
+appsettings.Development.json
+.env
 
 # Data
 data/chroma_db/
