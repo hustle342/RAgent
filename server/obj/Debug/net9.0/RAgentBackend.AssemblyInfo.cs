@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("RAgentBackend")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+663bd7301c0a250571b6d97b5820022fbea2a66d")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+fb4235e494baa3b0c43d3ac35d57dc08d9926f84")]
 [assembly: System.Reflection.AssemblyProductAttribute("RAgentBackend")]
 [assembly: System.Reflection.AssemblyTitleAttribute("RAgentBackend")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
