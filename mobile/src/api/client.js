@@ -6,7 +6,7 @@ import axios from 'axios';
 const OFFLINE_MOCK = true;
 
 // Keep a production-capable client available if needed
-const API_BASE_URL = 'http://';
+const API_BASE_URL = 'http://localhost:8080';
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
@@ -63,10 +63,8 @@ if (OFFLINE_MOCK) {
   };
 } else {
   ragApi = {
-    askQuestion: (question, docIds = []) => apiClient.post('/api/question', { question, document_ids: docIds }),
-    getDocuments: () => apiClient.get('/api/documents'),
     generateQuiz: (numQuestions = 5) => apiClient.post('/api/quiz', { num_questions: numQuestions }),
-    getSummary: (docIds = []) => apiClient.post('/api/summary', { document_ids: docIds }),
+    getSummary: (docIds = []) => apiClient.post('/api/summarize', { document_ids: docIds }),
   };
 
   defaultClient = apiClient;
