@@ -49,3 +49,5 @@ temp_uploads/
 
 # Node modules (frontend dependencies)
 node_modules/
+
+Documentation/

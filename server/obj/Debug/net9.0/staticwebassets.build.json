@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Hash": "LaEJgXW+B4LNsbeKfZI9M/noznLGSk73u4rcfxuVjj0=",
+  "Source": "RAgentBackend",
+  "BasePath": "_content/RAgentBackend",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": [],
+  "Endpoints": []
+}
