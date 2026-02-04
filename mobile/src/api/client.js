@@ -6,7 +6,7 @@ import axios from 'axios';
 const OFFLINE_MOCK = true;
 
 // Keep a production-capable client available if needed
-const API_BASE_URL = 'http://192.168.1.164:8000';
+const API_BASE_URL = 'http://';
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
