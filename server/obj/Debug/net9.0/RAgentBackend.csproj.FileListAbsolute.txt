@@ -64,3 +64,4 @@ C:\EfeDosyalar\RAgent\server\obj\Debug\net9.0\refint\RAgentBackend.dll
 C:\EfeDosyalar\RAgent\server\obj\Debug\net9.0\RAgentBackend.pdb
 C:\EfeDosyalar\RAgent\server\obj\Debug\net9.0\RAgentBackend.genruntimeconfig.cache
 C:\EfeDosyalar\RAgent\server\obj\Debug\net9.0\ref\RAgentBackend.dll
+C:\EfeDosyalar\RAgent\server\obj\Debug\net9.0\staticwebassets.upToDateCheck.txt

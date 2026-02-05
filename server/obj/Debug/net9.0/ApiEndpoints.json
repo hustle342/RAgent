@@ -1,0 +1,56 @@
+[
+  {
+    "ContainingType": "RAgentBackend.Features.QuizGeneration.QuizGeneratorEndpoint",
+    "Method": "HandleAsync",
+    "RelativePath": "api/quiz",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "request",
+        "Type": "RAgentBackend.Features.Models.QuizGenerateRequestModel",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Void",
+        "MediaTypes": [],
+        "StatusCode": 200
+      }
+    ],
+    "Tags": [
+      "Quiz"
+    ],
+    "EndpointName": "GenerateQuiz"
+  },
+  {
+    "ContainingType": "RAgentBackend.Features.Summarization.SummarizeEndpoint",
+    "Method": "HandleAsync",
+    "RelativePath": "api/summarize",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "request",
+        "Type": "RAgentBackend.Features.Models.SummarizeRequestModel",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Collections.Generic.IAsyncEnumerable\u00601[[System.String, System.Private.CoreLib, Version=9.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]]",
+        "MediaTypes": [
+          "application/json"
+        ],
+        "StatusCode": 200
+      }
+    ],
+    "Tags": [
+      "Summarization"
+    ],
+    "EndpointName": "SummarizeText"
+  }
+]
