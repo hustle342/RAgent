@@ -1,5 +1,33 @@
 [
   {
+    "ContainingType": "RAgentBackend.Features.GeneralAssistant.GeneralAssistantEndpoint",
+    "Method": "HandleAsync",
+    "RelativePath": "api/chat/general",
+    "HttpMethod": "POST",
+    "IsController": false,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "request",
+        "Type": "RAgentBackend.Features.Models.GeneralAssistantRequestModel",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "System.Collections.Generic.IAsyncEnumerable\u00601[[System.String, System.Private.CoreLib, Version=9.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]]",
+        "MediaTypes": [
+          "application/json"
+        ],
+        "StatusCode": 200
+      }
+    ],
+    "Tags": [
+      "Chat"
+    ],
+    "EndpointName": "GeneralChat"
+  },
+  {
     "ContainingType": "RAgentBackend.Features.QuizGeneration.QuizGeneratorEndpoint",
     "Method": "HandleAsync",
     "RelativePath": "api/quiz",

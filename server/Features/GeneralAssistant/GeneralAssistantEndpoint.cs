@@ -1,10 +1,11 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Carter;
+using Microsoft.AspNetCore.Mvc;
 using RAgentBackend.Shared.AI;
 using RAgentBackend.Features.Models;
 
 namespace RAgentBackend.Features.GeneralAssistant
 {
-    public class GeneralAssistantEndpoint
+    public class GeneralAssistantEndpoint : ICarterModule
     {
         public void AddRoutes(IEndpointRouteBuilder app)
         {
