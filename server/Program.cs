@@ -14,7 +14,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddHttpClient<IAIClient, OllamaClient>();
+builder.Services.AddHttpClient<IAIClient, GroqClient>();
 builder.Services.AddCarter();
 
 var app = builder.Build();
