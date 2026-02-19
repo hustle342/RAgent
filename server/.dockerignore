@@ -1,11 +1,6 @@
-**/.dockerignore
-**/.env
-**/.git
-**/.vscode
-**/bin
-**/obj
-**/TestResults
-**/docker-compose*
-**/Dockerfile*
-LICENSE
-README.md
+.dockerignore
+.env
+debug.log
+docker-compose.yml
+bin/
+obj/
