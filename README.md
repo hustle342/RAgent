@@ -6,7 +6,7 @@
 How to run locally (Streamlit):
 
 - Create and activate your Python venv and install deps:
-
+.i
 ```bash
 python -m venv .venv
 source .venv/bin/activate
